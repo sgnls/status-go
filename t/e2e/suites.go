@@ -1,6 +1,8 @@
 package t
 
 import (
+	"context"
+
 	"github.com/ethereum/go-ethereum/les"
 	whisper "github.com/ethereum/go-ethereum/whisper/whisperv5"
 	"github.com/status-im/status-go/geth/api"
@@ -56,6 +58,7 @@ func (s *NodeManagerTestSuite) StartTestNode(opts ...TestNodeOption) {
 func (s *NodeManagerTestSuite) StopTestNode() {
 	s.NotNil(s.NodeManager)
 	s.True(s.NodeManager.IsNodeRunning())
+	s.NoError(s.NodeManager.EnsureSync(context.Background()))
 	s.NoError(s.NodeManager.StopNode())
 	s.False(s.NodeManager.IsNodeRunning())
 }
