@@ -54,6 +54,7 @@ type lightFetcher struct {
 	requestChn chan bool // true if initiated from outside
 	syncing    bool
 	syncDone   chan *peer
+	dbClosed   bool
 }
 
 // fetcherPeerInfo holds fetcher-specific information about each active peer
@@ -195,6 +196,10 @@ func (f *lightFetcher) syncLoop() {
 				f.pm.serverPool.adjustResponseTime(req.peer.poolEntry, time.Duration(mclock.Now()-req.sent), req.timeout)
 			}
 			f.lock.Lock()
+			if f.dbClosed {
+				f.lock.Unlock()
+				return
+			}
 			if !ok || !(f.syncing || f.processResponse(req, resp)) {
 				resp.peer.Log().Debug("Failed processing response")
 				go f.pm.removePeer(resp.peer.id)

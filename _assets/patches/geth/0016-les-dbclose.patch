@@ -1,0 +1,41 @@
+diff --git a/les/backend.go b/les/backend.go
+index 333df920..87b6c9b4 100644
+--- a/les/backend.go
++++ b/les/backend.go
+@@ -249,7 +249,13 @@ func (s *LightEthereum) Stop() error {
+ 	s.eventMux.Stop()
+
+ 	time.Sleep(time.Millisecond * 200)
++
++	fetcher := s.protocolManager.fetcher
++	fetcher.lock.Lock()
++	fetcher.dbClosed = true
+ 	s.chainDb.Close()
++	fetcher.lock.Unlock()
++
+ 	close(s.shutdownChan)
+
+ 	return nil
+diff --git a/les/fetcher.go b/les/fetcher.go
+index 3fc4df30..925740b4 100644
+--- a/les/fetcher.go
++++ b/les/fetcher.go
+@@ -54,6 +54,7 @@ type lightFetcher struct {
+ 	requestChn chan bool // true if initiated from outside
+ 	syncing    bool
+ 	syncDone   chan *peer
++	dbClosed   bool
+ }
+
+ // fetcherPeerInfo holds fetcher-specific information about each active peer
+@@ -195,6 +196,10 @@ func (f *lightFetcher) syncLoop() {
+ 				f.pm.serverPool.adjustResponseTime(req.peer.poolEntry, time.Duration(mclock.Now()-req.sent), req.timeout)
+ 			}
+ 			f.lock.Lock()
++			if f.dbClosed {
++				f.lock.Unlock()
++				return
++			}
+ 			if !ok || !(f.syncing || f.processResponse(req, resp)) {
+ 				resp.peer.Log().Debug("Failed processing response")
+ 				go f.pm.removePeer(resp.peer.id)

@@ -249,7 +249,13 @@ func (s *LightEthereum) Stop() error {
 	s.eventMux.Stop()
 
 	time.Sleep(time.Millisecond * 200)
+
+	fetcher := s.protocolManager.fetcher
+	fetcher.lock.Lock()
+	fetcher.dbClosed = true
 	s.chainDb.Close()
+	fetcher.lock.Unlock()
+
 	close(s.shutdownChan)
 
 	return nil
