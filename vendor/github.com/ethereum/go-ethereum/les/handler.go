@@ -239,7 +239,7 @@ func (pm *ProtocolManager) Stop() {
 	pm.noMorePeers <- struct{}{}
 
 	close(pm.quitSync) // quits syncer, fetcher
-	pm.downloader.Terminate()
+
 	time.Sleep(time.Second)
 	// Disconnect existing sessions.
 	// This also closes the gate for any new registrations on the peer set.
