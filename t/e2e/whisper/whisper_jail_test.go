@@ -1,11 +1,11 @@
 package whisper
 
 import (
-	"runtime"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	whisper "github.com/ethereum/go-ethereum/whisper/whisperv6"
 	"github.com/status-im/status-go/geth/jail"
 	"github.com/status-im/status-go/static"
@@ -66,11 +66,6 @@ func (s *WhisperJailTestSuite) TestJailWhisper() {
 
 	r := s.Require()
 
-	// Increase number of OS threads that can run go code simultaneously.
-	// Some test cases (namely test 3) require a higher number of parallel
-	// go routines to successfully complete without hanging.
-	runtime.GOMAXPROCS(3)
-
 	keyPairID1, err := s.AddKeyPair(TestConfig.Account1.Address, TestConfig.Account1.Password)
 	r.NoError(err)
 
@@ -123,7 +118,7 @@ func (s *WhisperJailTestSuite) TestJailWhisper() {
 					topic: topic,
 					sig: shh.getPublicKey(identity1),
 					pubKey: shh.getPublicKey(identity2),
-			  		payload: web3.toHex(payload),
+					payload: web3.toHex(payload),
 				};
 
 				var sent = shh.post(message)
@@ -165,7 +160,7 @@ func (s *WhisperJailTestSuite) TestJailWhisper() {
 					topic: topic,
 					sig: shh.getPublicKey(identity),
 					symKeyID: keyid,
-			  		payload: web3.toHex(payload),
+					payload: web3.toHex(payload),
 				};
 
 				var sent = shh.post(message)
@@ -192,21 +187,23 @@ func (s *WhisperJailTestSuite) TestJailWhisper() {
 					topics: [topic],
 					symKeyID: keyid
 				});
-
+				// creating a filter is an async operation
+				setTimeout(function() {
 				// post message
-				var message = {
+				  var message = {
 					ttl: 10,
 					powTarget: 0.001,
 					powTime: 2,
 					topic: topic,
 					symKeyID: keyid,
-			  		payload: web3.toHex(payload),
-				};
+					payload: web3.toHex(payload),
+				  };
 
-				var sent = shh.post(message)
-				if (!sent) {
+				  var sent = shh.post(message)
+				  if (!sent) {
 					throw 'message not sent: ' + JSON.stringify(message);
-				}
+				  }
+				}, 100)
 			`,
 			true,
 		},
@@ -234,7 +231,7 @@ func (s *WhisperJailTestSuite) TestJailWhisper() {
 					powTime: 20,
 					topic: topic,
 					pubKey: shh.getPublicKey(identity),
-			  		payload: web3.toHex(payload),
+					payload: web3.toHex(payload),
 				};
 
 				var sent = shh.post(message)
@@ -269,10 +266,10 @@ func (s *WhisperJailTestSuite) TestJailWhisper() {
 					ttl: 10,
 					powTarget: 0.001,
 					powTime: 2,
-				  	sig: shh.getPublicKey(identity2),
-				  	pubKey: shh.getPublicKey(identity1),
-				  	topic: topic,
-				  	payload: web3.toHex(payload)
+					sig: shh.getPublicKey(identity2),
+					pubKey: shh.getPublicKey(identity1),
+					topic: topic,
+					payload: web3.toHex(payload)
 				};
 
 				var sent = shh.post(message)
@@ -297,6 +294,7 @@ func (s *WhisperJailTestSuite) TestJailWhisper() {
 	`
 
 	for _, tc := range testCases {
+		log.Info("TESTS", "running", tc.name)
 		chatID := crypto.Keccak256Hash([]byte(tc.name)).Hex()
 
 		s.Jail.CreateAndInitCell(chatID, makeTopicCode)
