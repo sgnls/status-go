@@ -6,8 +6,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 	whisper "github.com/ethereum/go-ethereum/whisper/whisperv6"
-	"github.com/status-im/status-go/geth/account"
 	"github.com/status-im/status-go/geth/node"
+	"github.com/status-im/status-go/geth/provider"
 	e2e "github.com/status-im/status-go/t/e2e"
 	. "github.com/status-im/status-go/t/utils"
 	"github.com/stretchr/testify/suite"
@@ -35,7 +35,9 @@ func (s *WhisperTestSuite) TestWhisperFilterRace() {
 	whisperService, err := s.NodeManager.WhisperService()
 	s.NoError(err)
 
-	accountManager := account.NewManager(s.NodeManager)
+	p := provider.New(s.NodeManager)
+	accountManager, err := p.AccountManager()
+	s.Nil(err)
 	s.NotNil(accountManager)
 
 	whisperAPI := whisper.NewPublicWhisperAPI(whisperService)
@@ -100,7 +102,9 @@ func (s *WhisperTestSuite) TestLogout() {
 	whisperService, err := s.NodeManager.WhisperService()
 	s.NoError(err)
 
-	accountManager := account.NewManager(s.NodeManager)
+	p := provider.New(s.NodeManager)
+	accountManager, err := p.AccountManager()
+	s.Nil(err)
 	s.NotNil(accountManager)
 
 	// create an account

@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/status-im/status-go/geth/account"
-	"github.com/status-im/status-go/geth/common"
 	e2e "github.com/status-im/status-go/t/e2e"
 	. "github.com/status-im/status-go/t/utils"
 	"github.com/stretchr/testify/suite"
@@ -85,7 +84,7 @@ func (s *AccountsTestSuite) TestCreateChildAccount() {
 	s.StartTestBackend()
 	defer s.StopTestBackend()
 
-	keyStore, err := s.Backend.NodeManager().AccountKeyStore()
+	keyStore, err := s.Backend.AccountManager().AccountKeyStore()
 	s.NoError(err)
 	s.NotNil(keyStore)
 
@@ -94,7 +93,7 @@ func (s *AccountsTestSuite) TestCreateChildAccount() {
 	s.NoError(err)
 	s.T().Logf("Account created: {address: %s, key: %s, mnemonic:%s}", address, pubKey, mnemonic)
 
-	acct, err := common.ParseAccountString(address)
+	acct, err := account.ParseAccountString(address)
 	s.NoError(err, "can not get account from address")
 
 	// obtain decrypted key, and make sure that extended key (which will be used as root for sub-accounts) is present
@@ -133,7 +132,7 @@ func (s *AccountsTestSuite) TestRecoverAccount() {
 	s.StartTestBackend()
 	defer s.StopTestBackend()
 
-	keyStore, err := s.Backend.NodeManager().AccountKeyStore()
+	keyStore, err := s.Backend.AccountManager().AccountKeyStore()
 	s.NoError(err)
 
 	// create an acc
@@ -147,7 +146,7 @@ func (s *AccountsTestSuite) TestRecoverAccount() {
 	s.False(address != addressCheck || pubKey != pubKeyCheck, "incorrect accound details recovered")
 
 	// now test recovering, but make sure that acc/key file is removed i.e. simulate recovering on a new device
-	acc, err := common.ParseAccountString(address)
+	acc, err := account.ParseAccountString(address)
 	s.NoError(err, "can not get acc from address")
 
 	acc, key, err := keyStore.AccountDecryptedKey(acc, TestConfig.Account1.Password)
