@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/NaySoftware/go-fcm"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -240,7 +241,7 @@ func (api *StatusAPI) ConnectionChange(typ string, expensive bool) {
 func (api *StatusAPI) AppStateChange(state string) {
 	appState, err := ParseAppState(state)
 	if err != nil {
-		log.Error("AppStateChange failed, ignoring it:", err)
+		log.Error(fmt.Sprintf("AppStateChange failed, ignoring it: %v", err))
 		return // and do nothing
 	}
 	api.b.AppStateChange(appState)

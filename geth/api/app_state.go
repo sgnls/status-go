@@ -15,7 +15,7 @@ func (a AppState) String() string {
 // Specific app states
 // see https://facebook.github.io/react-native/docs/appstate.html
 const (
-	AppStateForeground = AppState("foreground")
+	AppStateActive     = AppState("active")
 	AppStateBackground = AppState("background")
 	AppStateInactive   = AppState("inactive")
 
@@ -24,7 +24,7 @@ const (
 
 // validAppStates returns an immutable set of valid states.
 func validAppStates() []AppState {
-	return []AppState{AppStateInactive, AppStateBackground, AppStateForeground}
+	return []AppState{AppStateInactive, AppStateBackground, AppStateActive}
 }
 
 // ParseAppState creates AppState from a string
