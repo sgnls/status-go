@@ -13,15 +13,12 @@ import (
 
 // ServiceProvider provides access to status and geth services
 type ServiceProvider struct {
-	fcmServerKey string
-
 	nodeManager    *node.NodeManager
 	accountManager *account.Manager
 	jailManager    *jail.Jail
 	txQueueManager *transactions.Manager
 
 	account *accounts.Manager
-	whisper *whisper.Whisper
 }
 
 // New builds a Serviceprovider based on a NodeManager and a fcmServerKey
@@ -31,11 +28,6 @@ func New(nodeManager *node.NodeManager) *ServiceProvider {
 	}
 }
 
-// SetFCMServerKey sets the fcmServerKey for needed for notification manager
-func (p *ServiceProvider) SetFCMServerKey(fcmServerKey string) {
-	p.fcmServerKey = fcmServerKey
-}
-
 // Node gets the underlying geth Node of the given nodeManager
 func (p *ServiceProvider) Node() (*gethNode.Node, error) {
 	return p.nodeManager.Node()
@@ -43,24 +35,18 @@ func (p *ServiceProvider) Node() (*gethNode.Node, error) {
 
 // Account get the underlying accounts.Manager under account.Manager
 func (p *ServiceProvider) Account() (*accounts.Manager, error) {
-	if p.account != nil {
-		return p.account, nil
-	}
-
-	node, err := p.nodeManager.Node()
+	node, err := p.Node()
 	if err != nil {
 		return nil, err
 	}
-	p.account = node.AccountManager()
-
-	return p.account, nil
+	return node.AccountManager(), nil
 }
 
 // AccountKeyStore exposes reference to accounts key store
 func (p *ServiceProvider) AccountKeyStore() (*keystore.KeyStore, error) {
 	am, err := p.Account()
 	if err != nil {
-		return nil, account.ErrInvalidAccountManager
+		return nil, err
 	}
 
 	backends := am.Backends(keystore.KeyStoreType)
@@ -78,14 +64,7 @@ func (p *ServiceProvider) AccountKeyStore() (*keystore.KeyStore, error) {
 
 // Whisper gets a WhisperService
 func (p *ServiceProvider) Whisper() (*whisper.Whisper, error) {
-	var err error
-
-	if p.whisper != nil {
-		return p.whisper, nil
-	}
-	p.whisper, err = p.nodeManager.WhisperService()
-
-	return p.whisper, err
+	return p.nodeManager.WhisperService()
 }
 
 // NodeManager get the related NodeManager
@@ -95,41 +74,39 @@ func (p *ServiceProvider) NodeManager() *node.NodeManager {
 
 // AccountManager  get the AccountManager
 func (p *ServiceProvider) AccountManager() (*account.Manager, error) {
-	if p.accountManager != nil {
-		return p.accountManager, nil
+	if p.accountManager == nil {
+		p.accountManager = account.NewManager(p)
 	}
-
-	p.accountManager = account.NewManager(p)
 
 	return p.accountManager, nil
 }
 
 // JailManager get the jail manager
 func (p *ServiceProvider) JailManager() *jail.Jail {
-	if p.jailManager != nil {
-		return p.jailManager
+	if p.jailManager == nil {
+		p.jailManager = jail.New(p.nodeManager)
 	}
 
-	return jail.New(p.nodeManager)
+	return p.jailManager
 }
 
 // TxQueueManager get transaction manager
 func (p *ServiceProvider) TxQueueManager() *transactions.Manager {
-	if p.txQueueManager != nil {
-		return p.txQueueManager
+	if p.txQueueManager == nil {
+		am, err := p.AccountManager()
+		if err != nil {
+			return nil
+		}
+		p.txQueueManager = transactions.NewManager(p.nodeManager, am)
 	}
-	am, err := p.AccountManager()
-	if err != nil {
-		return nil
-	}
-	return transactions.NewManager(p.nodeManager, am)
+	return p.txQueueManager
 }
 
 // Reset resets all managers
 func (p *ServiceProvider) Reset() {
-	p.accountManager = nil
+	// p.accountManager = nil
 	p.jailManager = nil
 	p.txQueueManager = nil
 	p.account = nil
-	p.whisper = nil
+	// p.whisper = nil
 }

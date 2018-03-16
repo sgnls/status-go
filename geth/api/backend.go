@@ -11,9 +11,9 @@ import (
 	"github.com/status-im/status-go/geth/jail"
 	"github.com/status-im/status-go/geth/log"
 	"github.com/status-im/status-go/geth/node"
+	"github.com/status-im/status-go/geth/notifications/push/fcm"
 	"github.com/status-im/status-go/geth/params"
 	"github.com/status-im/status-go/geth/provider"
-	"github.com/status-im/status-go/geth/rpc"
 	"github.com/status-im/status-go/geth/signal"
 	"github.com/status-im/status-go/geth/transactions"
 )
@@ -27,7 +27,7 @@ const (
 type StatusBackend struct {
 	mu              sync.Mutex
 	connectionState ConnectionState
-	providerManager *provider.ServiceProvider
+	Provider        *provider.ServiceProvider
 	newNotification common.NotificationConstructor
 }
 
@@ -35,10 +35,10 @@ type StatusBackend struct {
 func NewStatusBackend() *StatusBackend {
 	defer log.Info("Status backend initialized")
 	p := provider.New(node.NewNodeManager())
-	p.SetFCMServerKey(fcmServerKey)
 
 	backend := StatusBackend{
-		providerManager: p,
+		Provider:        p,
+		newNotification: fcm.NewNotification(fcmServerKey),
 	}
 
 	return &backend
@@ -46,12 +46,12 @@ func NewStatusBackend() *StatusBackend {
 
 // NodeManager returns reference to node manager
 func (b *StatusBackend) NodeManager() *node.NodeManager {
-	return b.providerManager.NodeManager()
+	return b.Provider.NodeManager()
 }
 
 // AccountManager returns reference to account manager
 func (b *StatusBackend) AccountManager() common.AccountManager {
-	am, err := b.providerManager.AccountManager()
+	am, err := b.Provider.AccountManager()
 	if err != nil {
 		log.Warn(err.Error())
 	}
@@ -60,13 +60,12 @@ func (b *StatusBackend) AccountManager() common.AccountManager {
 
 // JailManager returns reference to jail
 func (b *StatusBackend) JailManager() jail.Manager {
-	jm := b.providerManager.JailManager()
-	return jm
+	return b.Provider.JailManager()
 }
 
 // TxQueueManager returns reference to transactions manager
 func (b *StatusBackend) TxQueueManager() *transactions.Manager {
-	return b.providerManager.TxQueueManager()
+	return b.Provider.TxQueueManager()
 }
 
 // IsNodeRunning confirm that node is running
@@ -95,7 +94,6 @@ func (b *StatusBackend) startNode(config *params.NodeConfig) (err error) {
 		case node.EthNodeError:
 			err = fmt.Errorf("%v: %v", node.ErrNodeStartFailure, err)
 		}
-
 		signal.Send(signal.Envelope{
 			Type: signal.EventNodeCrashed,
 			Event: signal.NodeCrashEvent{
@@ -108,25 +106,32 @@ func (b *StatusBackend) startNode(config *params.NodeConfig) (err error) {
 	signal.Send(signal.Envelope{Type: signal.EventNodeStarted})
 	// tx queue manager should be started after node is started, it depends
 	// on rpc client being created
-	b.providerManager.TxQueueManager().Start()
+	b.TxQueueManager().Start()
 	if err := b.registerHandlers(); err != nil {
 		log.Error("Handler registration failed", "err", err)
 	}
-	w, err := b.providerManager.Whisper()
-	if w == nil || err != nil {
-		return account.ErrWhisperIdentityInjectionFailure
+	if err := b.DeleteWhisperKeyPairs(); err != nil {
+		return err
 	}
 
-	if err = w.DeleteKeyPairs(); err != nil {
-		return fmt.Errorf("%s: %v", account.ErrWhisperClearIdentitiesFailure, err)
-	}
-
-	if err := b.AccountManager().ReSelectAccount(); err != nil {
+	if err := b.ReselectAccount(); err != nil {
 		log.Error("Reselect account failed", "err", err)
 	}
 
 	log.Info("Account reselected")
 	signal.Send(signal.Envelope{Type: signal.EventNodeReady})
+	return nil
+}
+
+// ReselectAccount reselects the previous account if any
+func (b *StatusBackend) ReselectAccount() error {
+	if err := b.AccountManager().ReSelectAccount(); err != nil {
+		return err
+	}
+	if err := b.selectKeyPair(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -142,10 +147,10 @@ func (b *StatusBackend) stopNode() error {
 	if !b.IsNodeRunning() {
 		return node.ErrNoRunningNode
 	}
-	b.providerManager.TxQueueManager().Stop()
-	b.providerManager.TxQueueManager().Stop()
+	b.TxQueueManager().Stop()
+	b.JailManager().Stop()
 	defer signal.Send(signal.Envelope{Type: signal.EventNodeStopped})
-	b.providerManager.Reset()
+	// b.Provider.Reset()
 	return b.NodeManager().StopNode()
 }
 
@@ -198,10 +203,10 @@ func (b *StatusBackend) SendTransaction(ctx context.Context, args common.SendTxA
 		ctx = context.Background()
 	}
 	tx := common.CreateTransaction(ctx, args)
-	if err = b.providerManager.TxQueueManager().QueueTransaction(tx); err != nil {
+	if err = b.TxQueueManager().QueueTransaction(tx); err != nil {
 		return hash, err
 	}
-	rst := b.providerManager.TxQueueManager().WaitForTransaction(tx)
+	rst := b.TxQueueManager().WaitForTransaction(tx)
 	if rst.Error != nil {
 		return hash, rst.Error
 	}
@@ -210,22 +215,22 @@ func (b *StatusBackend) SendTransaction(ctx context.Context, args common.SendTxA
 
 // CompleteTransaction instructs backend to complete sending of a given transaction
 func (b *StatusBackend) CompleteTransaction(id common.QueuedTxID, password string) (gethcommon.Hash, error) {
-	return b.providerManager.TxQueueManager().CompleteTransaction(id, password)
+	return b.TxQueueManager().CompleteTransaction(id, password)
 }
 
 // CompleteTransactions instructs backend to complete sending of multiple transactions
 func (b *StatusBackend) CompleteTransactions(ids []common.QueuedTxID, password string) map[common.QueuedTxID]common.TransactionResult {
-	return b.providerManager.TxQueueManager().CompleteTransactions(ids, password)
+	return b.TxQueueManager().CompleteTransactions(ids, password)
 }
 
 // DiscardTransaction discards a given transaction from transaction queue
 func (b *StatusBackend) DiscardTransaction(id common.QueuedTxID) error {
-	return b.providerManager.TxQueueManager().DiscardTransaction(id)
+	return b.TxQueueManager().DiscardTransaction(id)
 }
 
 // DiscardTransactions discards given multiple transactions from transaction queue
 func (b *StatusBackend) DiscardTransactions(ids []common.QueuedTxID) map[common.QueuedTxID]common.RawDiscardTransactionResult {
-	return b.providerManager.TxQueueManager().DiscardTransactions(ids)
+	return b.TxQueueManager().DiscardTransactions(ids)
 }
 
 // registerHandlers attaches Status callback handlers to running node
@@ -235,16 +240,11 @@ func (b *StatusBackend) registerHandlers() error {
 		return node.ErrRPCClient
 	}
 
-	rpcClient.RegisterHandler("eth_accounts", b.rpcHandler())
-	rpcClient.RegisterHandler("eth_sendTransaction", b.providerManager.TxQueueManager().SendTransactionRPCHandler)
-	return nil
-}
-
-// rpcHandler returns RPC Handler for the Accounts() method.
-func (b *StatusBackend) rpcHandler() rpc.Handler {
-	return func(context.Context, ...interface{}) (interface{}, error) {
+	rpcClient.RegisterHandler("eth_accounts", func(context.Context, ...interface{}) (interface{}, error) {
 		return b.AccountManager().Accounts()
-	}
+	})
+	rpcClient.RegisterHandler("eth_sendTransaction", b.TxQueueManager().SendTransactionRPCHandler)
+	return nil
 }
 
 // ConnectionChange handles network state changes logic.
@@ -262,4 +262,58 @@ func (b *StatusBackend) AppStateChange(state AppState) {
 
 	// TODO: put node in low-power mode if the app is in background (or inactive)
 	// and normal mode if the app is in foreground.
+}
+
+// SelectAccount selects current account, by verifying that address has corresponding account which can be decrypted
+// using provided password. Once verification is done, decrypted key is injected into Whisper (as a single identity,
+// all previous identities are removed).
+func (b *StatusBackend) SelectAccount(address, password string) error {
+	if err := b.AccountManager().SelectAccount(address, password); err != nil {
+		return err
+	}
+	if err := b.selectKeyPair(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Logout clears whisper identities
+func (b *StatusBackend) Logout() error {
+	if err := b.DeleteWhisperKeyPairs(); err != nil {
+		return err
+	}
+
+	return b.AccountManager().Logout()
+}
+
+// DeleteWhisperKeyPairs deletes the keu pairs
+func (b *StatusBackend) DeleteWhisperKeyPairs() error {
+	w, err := b.Provider.Whisper()
+	if w == nil || err != nil {
+		return account.ErrWhisperIdentityInjectionFailure
+	}
+
+	if err := w.DeleteKeyPairs(); err != nil {
+		return fmt.Errorf("%s: %v", account.ErrWhisperClearIdentitiesFailure, err)
+	}
+	return nil
+}
+
+func (b *StatusBackend) selectKeyPair() error {
+	w, err := b.Provider.Whisper()
+	if err != nil {
+		return fmt.Errorf("%s: %v", account.ErrWhisperClearIdentitiesFailure, err)
+	}
+
+	selectedAccount, err := b.AccountManager().SelectedAccount()
+	if err != nil {
+		return err
+	}
+
+	err = w.SelectKeyPair(selectedAccount.AccountKey.PrivateKey)
+	if err != nil {
+		return account.ErrWhisperIdentityInjectionFailure
+	}
+	return nil
 }

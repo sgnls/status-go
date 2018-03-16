@@ -83,7 +83,7 @@ func (s *ManagerTestSuite) TestReferencesWithoutStartedNode() {
 		{
 			"non-null manager, no running node, get AccountManager",
 			func() (interface{}, error) {
-				return s.Provider.AccountManager()
+				return s.Provider.Account()
 			},
 			node.ErrNoRunningNode,
 		},
@@ -153,7 +153,7 @@ func (s *ManagerTestSuite) TestReferencesWithStartedNode() {
 		{
 			"node is running, get AccountManager",
 			func() (interface{}, error) {
-				return s.Provider.AccountManager()
+				return s.Provider.Account()
 			},
 			&accounts.Manager{},
 		},
